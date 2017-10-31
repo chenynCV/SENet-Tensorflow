@@ -2,8 +2,8 @@ import tensorflow as tf
 from tflearn.layers.conv import global_avg_pool
 from tensorflow.contrib.layers import batch_norm, flatten
 from tensorflow.contrib.framework import arg_scope
-from cifar10 import *
 import numpy as np
+import scene_input
 
 weight_decay = 0.0005
 momentum = 0.9
@@ -22,13 +22,18 @@ thus, total number of layers = (3*blocks)*residual_layer_num + 2
 
 reduction_ratio = 4
 
-batch_size = 128
 iteration = 391
 # 128 * 391 ~ 50,000
 
 test_iteration = 10
 
 total_epochs = 100
+
+batch_size = 128
+image_size = 32
+img_channels = 3
+class_num = 80
+
 
 def conv_layer(input, filter, kernel, stride, padding='SAME', layer_name="conv"):
     with tf.name_scope(layer_name):
@@ -69,13 +74,10 @@ def Fully_connected(x, units=class_num, layer_name='fully_connected') :
 def Evaluate(sess):
     test_acc = 0.0
     test_loss = 0.0
-    test_pre_index = 0
     add = 1000
 
     for it in range(test_iteration):
-        test_batch_x = test_x[test_pre_index: test_pre_index + add]
-        test_batch_y = test_y[test_pre_index: test_pre_index + add]
-        test_pre_index = test_pre_index + add
+        test_batch_x, test_batch_y = scene_data_val.next_batch(add, image_size)
 
         test_feed_dict = {
             x: test_batch_x,
@@ -200,8 +202,13 @@ class SE_ResNeXt():
         return x
 
 
-train_x, train_y, test_x, test_y = prepare_data()
-train_x, test_x = color_preprocessing(train_x, test_x)
+train_dir = '../ai_challenger_scene_train_20170904/scene_train_images_20170904/' 
+annotations = '../ai_challenger_scene_train_20170904/scene_train_annotations_20170904.json'
+scene_data = scene_input.scene_data_fn(train_dir, annotations)
+
+val_dir = '../ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
+annotations = '../ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
+scene_data_val = scene_input.scene_data_fn(val_dir, annotations)
 
 
 # image_size = 32, img_channels = 3, class_num = 10 in cifar10
@@ -239,19 +246,11 @@ with tf.Session() as sess:
         if epoch % 30 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
 
-        pre_index = 0
         train_acc = 0.0
         train_loss = 0.0
 
         for step in range(1, iteration + 1):
-            if pre_index + batch_size < 50000:
-                batch_x = train_x[pre_index: pre_index + batch_size]
-                batch_y = train_y[pre_index: pre_index + batch_size]
-            else:
-                batch_x = train_x[pre_index:]
-                batch_y = train_y[pre_index:]
-
-            batch_x = data_augmentation(batch_x)
+            batch_x, batch_y = scene_data.next_batch(batch_size, image_size)
 
             train_feed_dict = {
                 x: batch_x,
@@ -265,7 +264,6 @@ with tf.Session() as sess:
 
             train_loss += batch_loss
             train_acc += batch_acc
-            pre_index += batch_size
 
 
         train_loss /= iteration # average loss
