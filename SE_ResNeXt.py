@@ -4,6 +4,9 @@ from tensorflow.contrib.layers import batch_norm, flatten
 from tensorflow.contrib.framework import arg_scope
 import numpy as np
 import scene_input
+import os
+
+os.environ['CUDA_VISIBLE_DEVICES']= '2'
 
 weight_decay = 0.0005
 momentum = 0.9
@@ -22,11 +25,6 @@ thus, total number of layers = (3*blocks)*residual_layer_num + 2
 
 reduction_ratio = 4
 
-iteration = 391
-# 128 * 391 ~ 50,000
-
-test_iteration = 10
-
 total_epochs = 100
 
 batch_size = 128
@@ -34,6 +32,10 @@ image_size = 32
 img_channels = 3
 class_num = 80
 
+iteration = 421
+# 128 * 421 ~ 53,879
+
+test_iteration = 10
 
 def conv_layer(input, filter, kernel, stride, padding='SAME', layer_name="conv"):
     with tf.name_scope(layer_name):
@@ -74,10 +76,9 @@ def Fully_connected(x, units=class_num, layer_name='fully_connected') :
 def Evaluate(sess):
     test_acc = 0.0
     test_loss = 0.0
-    add = 1000
 
     for it in range(test_iteration):
-        test_batch_x, test_batch_y = scene_data_val.next_batch(add, image_size)
+        test_batch_x, test_batch_y = scene_data_val.next_batch(batch_size, image_size)
 
         test_feed_dict = {
             x: test_batch_x,
@@ -213,21 +214,21 @@ scene_data_val = scene_input.scene_data_fn(val_dir, annotations)
 
 # image_size = 32, img_channels = 3, class_num = 10 in cifar10
 x = tf.placeholder(tf.float32, shape=[None, image_size, image_size, img_channels])
-label = tf.placeholder(tf.float32, shape=[None, class_num])
+label = tf.placeholder(tf.float32, shape=[None])
+one_hot_labels = tf.one_hot(indices=tf.cast(label, tf.int32), depth=class_num)
 
 training_flag = tf.placeholder(tf.bool)
-
 
 learning_rate = tf.placeholder(tf.float32, name='learning_rate')
 
 logits = SE_ResNeXt(x, training=training_flag).model
-cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=label, logits=logits))
+cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
 
 l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
 train = optimizer.minimize(cost + l2_loss * weight_decay)
 
-correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(label, 1))
+correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
 saver = tf.train.Saver(tf.global_variables())
@@ -261,6 +262,9 @@ with tf.Session() as sess:
 
             _, batch_loss = sess.run([train, cost], feed_dict=train_feed_dict)
             batch_acc = accuracy.eval(feed_dict=train_feed_dict)
+
+            print("epoch: %d/%d, iter: %d/%d, batch_loss: %.4f, batch_acc: %.4f \n" % (
+                epoch, total_epochs, step, iteration, batch_loss, batch_acc))
 
             train_loss += batch_loss
             train_acc += batch_acc
