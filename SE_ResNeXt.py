@@ -6,7 +6,7 @@ import numpy as np
 import scene_input
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES']= '2'
+os.environ['CUDA_VISIBLE_DEVICES']= '3'
 
 weight_decay = 0.0005
 momentum = 0.9
@@ -27,8 +27,8 @@ reduction_ratio = 4
 
 total_epochs = 100
 
-batch_size = 128
-image_size = 32
+batch_size = 32
+image_size = 64
 img_channels = 3
 class_num = 80
 
@@ -244,7 +244,7 @@ with tf.Session() as sess:
 
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
-        if epoch % 30 == 0 :
+        if epoch % 10 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
 
         train_acc = 0.0
