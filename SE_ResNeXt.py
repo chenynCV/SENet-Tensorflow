@@ -27,8 +27,8 @@ reduction_ratio = 4
 
 total_epochs = 100
 
-batch_size = 32
-image_size = 64
+batch_size = 128
+image_size = 32
 img_channels = 3
 class_num = 80
 
