@@ -5,6 +5,7 @@ from tensorflow.contrib.framework import arg_scope
 import numpy as np
 import scene_input
 import os
+from scipy import misc
 
 os.environ['CUDA_VISIBLE_DEVICES']= '3'
 
@@ -25,10 +26,10 @@ thus, total number of layers = (3*blocks)*residual_layer_num + 2
 
 reduction_ratio = 4
 
-total_epochs = 100
+total_epochs = 20
 
-batch_size = 128
-image_size = 32
+batch_size = 64
+image_size = 128
 img_channels = 3
 class_num = 80
 
@@ -107,7 +108,7 @@ class SE_ResNeXt():
 
     def first_layer(self, x, scope):
         with tf.name_scope(scope) :
-            x = conv_layer(x, filter=64, kernel=[3, 3], stride=1, layer_name=scope+'_conv1')
+            x = conv_layer(x, filter=64, kernel=[5, 5], stride=4, layer_name=scope+'_conv1')
             x = Batch_Normalization(x, training=self.training, scope=scope+'_batch1')
             x = Relu(x)
 
@@ -203,12 +204,12 @@ class SE_ResNeXt():
         return x
 
 
-train_dir = '../ai_challenger_scene_train_20170904/scene_train_images_20170904/' 
-annotations = '../ai_challenger_scene_train_20170904/scene_train_annotations_20170904.json'
+train_dir = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_images_20170904/' 
+annotations = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_annotations_20170904.json'
 scene_data = scene_input.scene_data_fn(train_dir, annotations)
 
-val_dir = '../ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
-annotations = '../ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
+val_dir = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
+annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
 scene_data_val = scene_input.scene_data_fn(val_dir, annotations)
 
 
@@ -236,6 +237,7 @@ saver = tf.train.Saver(tf.global_variables())
 with tf.Session() as sess:
     ckpt = tf.train.get_checkpoint_state('./model')
     if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
+        print("loading checkpoint...")
         saver.restore(sess, ckpt.model_checkpoint_path)
     else:
         sess.run(tf.global_variables_initializer())
@@ -244,7 +246,7 @@ with tf.Session() as sess:
 
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
-        if epoch % 10 == 0 :
+        if epoch % 5 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
 
         train_acc = 0.0
@@ -252,6 +254,7 @@ with tf.Session() as sess:
 
         for step in range(1, iteration + 1):
             batch_x, batch_y = scene_data.next_batch(batch_size, image_size)
+            batch_x = scene_input.data_augmentation(batch_x, image_size)
 
             train_feed_dict = {
                 x: batch_x,
