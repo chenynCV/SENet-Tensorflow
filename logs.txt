@@ -95,3 +95,4 @@ epoch: 12/100, train_loss: 3.6130, train_acc: 0.1584, test_loss: 2.8721, test_ac
 epoch: 13/100, train_loss: 3.6020, train_acc: 0.1624, test_loss: 2.7109, test_acc: 0.3125 
 epoch: 14/100, train_loss: 3.5691, train_acc: 0.1738, test_loss: 2.6651, test_acc: 0.2906 
 epoch: 15/100, train_loss: 3.5383, train_acc: 0.1804, test_loss: 2.5820, test_acc: 0.3125 
+epoch: 16/100, train_loss: 3.5032, train_acc: 0.1888, test_loss: 2.7528, test_acc: 0.3031 
