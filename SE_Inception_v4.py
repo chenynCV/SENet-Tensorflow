@@ -2,8 +2,11 @@ import tensorflow as tf
 from tflearn.layers.conv import global_avg_pool
 from tensorflow.contrib.layers import batch_norm, flatten
 from tensorflow.contrib.framework import arg_scope
-from cifar10 import *
 import numpy as np
+import scene_input
+import os
+
+os.environ['CUDA_VISIBLE_DEVICES']= '2'
 
 weight_decay = 0.0005
 momentum = 0.9
@@ -11,7 +14,11 @@ momentum = 0.9
 init_learning_rate = 0.1
 reduction_ratio = 4
 
-batch_size = 128
+batch_size = 32
+image_size = 96
+img_channels = 3
+class_num = 80
+
 iteration = 391
 # 128 * 391 ~ 50,000
 
@@ -65,13 +72,9 @@ def Dropout(x, rate, training) :
 def Evaluate(sess):
     test_acc = 0.0
     test_loss = 0.0
-    test_pre_index = 0
-    add = 1000
 
     for it in range(test_iteration):
-        test_batch_x = test_x[test_pre_index: test_pre_index + add]
-        test_batch_y = test_y[test_pre_index: test_pre_index + add]
-        test_pre_index = test_pre_index + add
+        test_batch_x, test_batch_y = scene_data_val.next_batch(batch_size, image_size)
 
         test_feed_dict = {
             x: test_batch_x,
@@ -258,7 +261,7 @@ class SE_Inception_v4():
             return scale
 
     def Build_SEnet(self, input_x):
-        input_x = tf.pad(input_x, [[0, 0], [32, 32], [32, 32], [0, 0]])
+        # input_x = tf.pad(input_x, [[0, 0], [32, 32], [32, 32], [0, 0]])
         # size 32 -> 96
         # only cifar10 architecture
 
@@ -291,58 +294,56 @@ class SE_Inception_v4():
         return x
 
 
-train_x, train_y, test_x, test_y = prepare_data()
-train_x, test_x = color_preprocessing(train_x, test_x)
+train_dir = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_images_20170904/' 
+annotations = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_annotations_20170904.json'
+scene_data = scene_input.scene_data_fn(train_dir, annotations)
+
+val_dir = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
+annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
+scene_data_val = scene_input.scene_data_fn(val_dir, annotations)
 
 
 # image_size = 32, img_channels = 3, class_num = 10 in cifar10
 x = tf.placeholder(tf.float32, shape=[None, image_size, image_size, img_channels])
-label = tf.placeholder(tf.float32, shape=[None, class_num])
+label = tf.placeholder(tf.float32, shape=[None,])
+one_hot_labels = tf.one_hot(indices=tf.cast(label, tf.int32), depth=class_num)
 
 training_flag = tf.placeholder(tf.bool)
-
 
 learning_rate = tf.placeholder(tf.float32, name='learning_rate')
 
 logits = SE_Inception_v4(x, training=training_flag).model
-cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=label, logits=logits))
+cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
 
 l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
 train = optimizer.minimize(cost + l2_loss * weight_decay)
 
-correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(label, 1))
+correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
 saver = tf.train.Saver(tf.global_variables())
 
 with tf.Session() as sess:
-    ckpt = tf.train.get_checkpoint_state('./model')
+    ckpt = tf.train.get_checkpoint_state('./model_Inception_v4')
     if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
         saver.restore(sess, ckpt.model_checkpoint_path)
     else:
         sess.run(tf.global_variables_initializer())
 
-    summary_writer = tf.summary.FileWriter('./logs', sess.graph)
+    summary_writer = tf.summary.FileWriter('./logs_Inception_v4', sess.graph)
 
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
-        if epoch % 30 == 0 :
+        if epoch % 5 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
 
-        pre_index = 0
         train_acc = 0.0
         train_loss = 0.0
 
         for step in range(1, iteration + 1):
-            if pre_index + batch_size < 50000:
-                batch_x = train_x[pre_index: pre_index + batch_size]
-                batch_y = train_y[pre_index: pre_index + batch_size]
-            else:
-                batch_x = train_x[pre_index:]
-                batch_y = train_y[pre_index:]
-
-            batch_x = data_augmentation(batch_x)
+            batch_x, batch_y = scene_data.next_batch(batch_size, image_size)
+            batch_x = scene_input.data_augmentation(batch_x, image_size)
 
             train_feed_dict = {
                 x: batch_x,
@@ -354,9 +355,11 @@ with tf.Session() as sess:
             _, batch_loss = sess.run([train, cost], feed_dict=train_feed_dict)
             batch_acc = accuracy.eval(feed_dict=train_feed_dict)
 
+            print("epoch: %d/%d, iter: %d/%d, batch_loss: %.4f, batch_acc: %.4f \n" % (
+                epoch, total_epochs, step, iteration, batch_loss, batch_acc))
+
             train_loss += batch_loss
             train_acc += batch_acc
-            pre_index += batch_size
 
 
         train_loss /= iteration # average loss
@@ -378,4 +381,4 @@ with tf.Session() as sess:
         with open('logs.txt', 'a') as f:
             f.write(line)
 
-        saver.save(sess=sess, save_path='./model/Inception_v4.ckpt')
+        saver.save(sess=sess, save_path='./model_Inception_v4/Inception_v4.ckpt')

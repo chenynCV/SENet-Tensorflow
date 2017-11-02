@@ -5,7 +5,7 @@ from tensorflow.contrib.framework import arg_scope
 import numpy as np
 import scene_input
 import os
-from scipy import misc
+from IPython import embed
 
 os.environ['CUDA_VISIBLE_DEVICES']= '3'
 
@@ -13,7 +13,7 @@ weight_decay = 0.0005
 momentum = 0.9
 
 init_learning_rate = 0.1
-cardinality = 8 # how many split ?
+cardinality = 2 # how many split ?
 blocks = 3 # res_block ! (split + transition)
 depth = 64 # out channel
 
@@ -26,10 +26,10 @@ thus, total number of layers = (3*blocks)*residual_layer_num + 2
 
 reduction_ratio = 4
 
-total_epochs = 20
+total_epochs = 100
 
 batch_size = 64
-image_size = 128
+image_size = 224
 img_channels = 3
 class_num = 80
 
@@ -48,6 +48,9 @@ def Global_Average_Pooling(x):
 
 def Average_pooling(x, pool_size=[2,2], stride=2, padding='SAME'):
     return tf.layers.average_pooling2d(inputs=x, pool_size=pool_size, strides=stride, padding=padding)
+
+def Max_pooling(x, pool_size=[3,3], stride=2, padding='VALID') :
+    return tf.layers.max_pooling2d(inputs=x, pool_size=pool_size, strides=stride, padding=padding)
 
 def Batch_Normalization(x, training, scope):
     with arg_scope([batch_norm],
@@ -108,9 +111,10 @@ class SE_ResNeXt():
 
     def first_layer(self, x, scope):
         with tf.name_scope(scope) :
-            x = conv_layer(x, filter=64, kernel=[5, 5], stride=4, layer_name=scope+'_conv1')
+            x = conv_layer(x, filter=64, kernel=[7, 7], stride=2, layer_name=scope+'_conv1')
             x = Batch_Normalization(x, training=self.training, scope=scope+'_batch1')
             x = Relu(x)
+            x = Max_pooling(x)
 
             return x
 
@@ -144,8 +148,6 @@ class SE_ResNeXt():
 
     def squeeze_excitation_layer(self, input_x, out_dim, ratio, layer_name):
         with tf.name_scope(layer_name) :
-
-
             squeeze = Global_Average_Pooling(input_x)
 
             excitation = Fully_connected(squeeze, units=out_dim / ratio, layer_name=layer_name+'_fully_connected1')
@@ -172,7 +174,6 @@ class SE_ResNeXt():
             else:
                 flag = False
                 stride = 1
-
             x = self.split_layer(input_x, stride=stride, layer_name='split_layer_'+layer_num+'_'+str(i))
             x = self.transition_layer(x, out_dim=out_dim, scope='trans_layer_'+layer_num+'_'+str(i))
             x = self.squeeze_excitation_layer(x, out_dim=out_dim, ratio=reduction_ratio, layer_name='squeeze_layer_'+layer_num+'_'+str(i))
@@ -196,6 +197,9 @@ class SE_ResNeXt():
         x = self.residual_layer(input_x, out_dim=64, layer_num='1')
         x = self.residual_layer(x, out_dim=128, layer_num='2')
         x = self.residual_layer(x, out_dim=256, layer_num='3')
+        x = self.residual_layer(x, out_dim=512, layer_num='4')
+
+        # embed()
 
         x = Global_Average_Pooling(x)
         x = flatten(x)
@@ -215,7 +219,7 @@ scene_data_val = scene_input.scene_data_fn(val_dir, annotations)
 
 # image_size = 32, img_channels = 3, class_num = 10 in cifar10
 x = tf.placeholder(tf.float32, shape=[None, image_size, image_size, img_channels])
-label = tf.placeholder(tf.float32, shape=[None])
+label = tf.placeholder(tf.float32, shape=[None,])
 one_hot_labels = tf.one_hot(indices=tf.cast(label, tf.int32), depth=class_num)
 
 training_flag = tf.placeholder(tf.bool)
@@ -244,9 +248,16 @@ with tf.Session() as sess:
 
     summary_writer = tf.summary.FileWriter('./logs', sess.graph)
 
+    coord = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(sess, coord)
+
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
-        if epoch % 5 == 0 :
+        if epoch <= 1:
+            epoch_learning_rate = 0.1
+        elif epoch <= 10:
+             epoch_learning_rate = 0.01
+        elif epoch % 20 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
 
         train_acc = 0.0
@@ -293,3 +304,6 @@ with tf.Session() as sess:
             f.write(line)
 
         saver.save(sess=sess, save_path='./model/ResNeXt.ckpt')
+
+    coord.request_stop()
+    coord.join(threads)

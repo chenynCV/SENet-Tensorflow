@@ -21,6 +21,7 @@ import PIL.Image as Image
 import json
 import os
 import random
+import tensorflow as tf
 
 class scene_data_fn(object):
 
@@ -178,4 +179,4 @@ def data_augmentation(batch, img_size=32):
     batch = _random_flip_leftright(batch)
     batch = _random_multiply(batch, 0.8, 1.2)
     batch = _random_crop(batch, [img_size, img_size], padding=4)
-    return batch
+    return np.array(batch)
