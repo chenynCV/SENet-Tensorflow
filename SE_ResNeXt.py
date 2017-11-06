@@ -3,8 +3,12 @@ from tflearn.layers.conv import global_avg_pool
 from tensorflow.contrib.layers import batch_norm, flatten
 from tensorflow.contrib.framework import arg_scope
 import numpy as np
-import scene_input
 import os
+from tensorpack import imgaug, dataset, ModelDesc, InputDesc
+from tensorpack.dataflow import (
+    AugmentImageComponent, PrefetchDataZMQ,
+    BatchData, MultiThreadMapData, DataFlow)
+from dataflow_input import (MyDataFlow, data_augmentation)
 from IPython import embed
 
 os.environ['CUDA_VISIBLE_DEVICES']= '3'
@@ -12,7 +16,7 @@ os.environ['CUDA_VISIBLE_DEVICES']= '3'
 weight_decay = 0.0005
 momentum = 0.9
 
-init_learning_rate = 0.1
+init_learning_rate = 0.01
 cardinality = 2 # how many split ?
 blocks = 3 # res_block ! (split + transition)
 depth = 64 # out channel
@@ -82,7 +86,9 @@ def Evaluate(sess):
     test_loss = 0.0
 
     for it in range(test_iteration):
-        test_batch_x, test_batch_y = scene_data_val.next_batch(batch_size, image_size)
+        batch_data = next(scene_data)
+        test_batch_x = batch_data['data']
+        test_batch_y = batch_data['label']
 
         test_feed_dict = {
             x: test_batch_x,
@@ -207,15 +213,23 @@ class SE_ResNeXt():
         x = Fully_connected(x, layer_name='final_fully_connected')
         return x
 
+val_dir = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
+annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
+# a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
+df = MyDataFlow(val_dir, annotations, is_training=False, batch_size=batch_size, img_size=(image_size, image_size))
+# start 3 processes to run the dataflow in parallel
+df = PrefetchDataZMQ(df, 3)
+df.reset_state()
+scene_data_val = df.get_data()
 
 train_dir = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_images_20170904/' 
 annotations = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_annotations_20170904.json'
-scene_data = scene_input.scene_data_fn(train_dir, annotations)
-
-val_dir = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
-annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
-scene_data_val = scene_input.scene_data_fn(val_dir, annotations)
-
+# a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
+df = MyDataFlow(train_dir, annotations, is_training=True, batch_size=batch_size, img_size=(image_size, image_size))
+# start 3 processes to run the dataflow in parallel
+df = PrefetchDataZMQ(df, 10)
+df.reset_state()
+scene_data = df.get_data()
 
 # image_size = 32, img_channels = 3, class_num = 10 in cifar10
 x = tf.placeholder(tf.float32, shape=[None, image_size, image_size, img_channels])
@@ -248,24 +262,18 @@ with tf.Session() as sess:
 
     summary_writer = tf.summary.FileWriter('./logs', sess.graph)
 
-    coord = tf.train.Coordinator()
-    threads = tf.train.start_queue_runners(sess, coord)
-
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
-        if epoch <= 1:
-            epoch_learning_rate = 0.1
-        elif epoch <= 10:
-             epoch_learning_rate = 0.01
-        elif epoch % 20 == 0 :
+        if epoch % 30 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
 
         train_acc = 0.0
         train_loss = 0.0
 
         for step in range(1, iteration + 1):
-            batch_x, batch_y = scene_data.next_batch(batch_size, image_size)
-            batch_x = scene_input.data_augmentation(batch_x, image_size)
+            batch_data = next(scene_data)
+            batch_x = batch_data['data']
+            batch_y = batch_data['label']
 
             train_feed_dict = {
                 x: batch_x,
@@ -304,6 +312,3 @@ with tf.Session() as sess:
             f.write(line)
 
         saver.save(sess=sess, save_path='./model/ResNeXt.ckpt')
-
-    coord.request_stop()
-    coord.join(threads)
