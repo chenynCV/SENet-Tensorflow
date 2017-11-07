@@ -555,3 +555,10 @@ epoch: 1/100, train_loss: 3.6711, train_acc: 0.1678, test_loss: 3.2731, test_acc
 epoch: 1/100, train_loss: 3.0825, train_acc: 0.2738, test_loss: 3.0000, test_acc: 0.2313 
 epoch: 2/100, train_loss: 2.8811, train_acc: 0.3298, test_loss: 2.8651, test_acc: 0.2469 
 epoch: 3/100, train_loss: 2.7245, train_acc: 0.3718, test_loss: 3.1025, test_acc: 0.2203 
+epoch: 4/100, train_loss: 2.6417, train_acc: 0.3953, test_loss: 2.7615, test_acc: 0.2969 
+epoch: 5/100, train_loss: 2.5510, train_acc: 0.4271, test_loss: 2.7139, test_acc: 0.2797 
+epoch: 6/100, train_loss: 2.4971, train_acc: 0.4422, test_loss: 2.5038, test_acc: 0.3484 
+epoch: 7/100, train_loss: 2.4232, train_acc: 0.4626, test_loss: 2.3913, test_acc: 0.3656 
+epoch: 8/100, train_loss: 2.3860, train_acc: 0.4736, test_loss: 2.3328, test_acc: 0.3563 
+epoch: 9/100, train_loss: 2.3359, train_acc: 0.4942, test_loss: 2.4415, test_acc: 0.3531 
+epoch: 10/100, train_loss: 2.3025, train_acc: 0.5018, test_loss: 2.6384, test_acc: 0.3297 

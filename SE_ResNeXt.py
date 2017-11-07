@@ -208,6 +208,7 @@ class SE_ResNeXt():
             for i in range(n_downsampling):
                 mult = pow(2, (n_downsampling - i))
                 x = deconv_layer(x, filter=int((32 * mult) / 2), kernel=[3, 3], stride=2, layer_name='deconv' + str(i))
+                x = Relu(x)
 
             x = conv_layer(x, filter=3, kernel=[7,7], stride=1, layer_name='conv1')
             x = 128 * Batch_Normalization(x, training=self.training, scope=scope+'_batch1') + 128
