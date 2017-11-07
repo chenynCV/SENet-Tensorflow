@@ -67,8 +67,8 @@ def color_preprocessing(x_train, x_test):
 
 def data_augmentation(batch, img_size=(224, 224)):
     batch = _random_flip_leftright(batch)
-    batch = _random_multiply(batch, 0.8, 1.2)
-    batch = _random_crop(batch, img_size, padding=None)
+    # batch = _random_multiply(batch, 0.8, 1.2)
+    # batch = _random_crop(batch, img_size, padding=None)
     return np.array(batch)
 
 

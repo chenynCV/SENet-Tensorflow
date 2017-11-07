@@ -16,7 +16,7 @@ os.environ['CUDA_VISIBLE_DEVICES']= '3'
 weight_decay = 0.0005
 momentum = 0.9
 
-init_learning_rate = 0.01
+init_learning_rate = 0.1
 cardinality = 2 # how many split ?
 blocks = 3 # res_block ! (split + transition)
 depth = 64 # out channel
@@ -47,6 +47,11 @@ def conv_layer(input, filter, kernel, stride, padding='SAME', layer_name="conv")
         network = tf.layers.conv2d(inputs=input, use_bias=False, filters=filter, kernel_size=kernel, strides=stride, padding=padding)
         return network
 
+def deconv_layer(input, filter, kernel, stride, padding='SAME', layer_name="deconv"):
+    with tf.name_scope(layer_name):
+        network = tf.layers.conv2d_transpose(inputs=input, use_bias=False, filters=filter, kernel_size=kernel, strides=stride, padding=padding)
+        return network
+
 def Global_Average_Pooling(x):
     return global_avg_pool(x, name='Global_avg_pooling')
 
@@ -74,6 +79,9 @@ def Relu(x):
 def Sigmoid(x) :
     return tf.nn.sigmoid(x)
 
+def tanh(x):
+    return tf.tanh(x)
+
 def Concatenation(layers) :
     return tf.concat(layers, axis=3)
 
@@ -86,7 +94,7 @@ def Evaluate(sess):
     test_loss = 0.0
 
     for it in range(test_iteration):
-        batch_data = next(scene_data)
+        batch_data = next(scene_data_val)
         test_batch_x = batch_data['data']
         test_batch_y = batch_data['label']
 
@@ -194,6 +202,17 @@ class SE_ResNeXt():
 
         return x
 
+    def generator(self, x, scope="generator"):
+        with tf.variable_scope(scope):
+            n_downsampling = 5
+            for i in range(n_downsampling):
+                mult = pow(2, (n_downsampling - i))
+                x = deconv_layer(x, filter=int((32 * mult) / 2), kernel=[3, 3], stride=2, layer_name='deconv' + str(i))
+
+            x = conv_layer(x, filter=3, kernel=[7,7], stride=1, layer_name='conv1')
+            x = 128 * Batch_Normalization(x, training=self.training, scope=scope+'_batch1') + 128
+
+            return x
 
     def Build_SEnet(self, input_x):
         # only cifar10 architecture
@@ -205,31 +224,14 @@ class SE_ResNeXt():
         x = self.residual_layer(x, out_dim=256, layer_num='3')
         x = self.residual_layer(x, out_dim=512, layer_num='4')
 
-        # embed()
+        recon_x = self.generator(x)
+        # recon_x = tf.cast(recon_x, dtype=tf.uint8)
 
         x = Global_Average_Pooling(x)
         x = flatten(x)
 
         x = Fully_connected(x, layer_name='final_fully_connected')
-        return x
-
-val_dir = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
-annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
-# a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
-df = MyDataFlow(val_dir, annotations, is_training=False, batch_size=batch_size, img_size=(image_size, image_size))
-# start 3 processes to run the dataflow in parallel
-df = PrefetchDataZMQ(df, 3)
-df.reset_state()
-scene_data_val = df.get_data()
-
-train_dir = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_images_20170904/' 
-annotations = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_annotations_20170904.json'
-# a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
-df = MyDataFlow(train_dir, annotations, is_training=True, batch_size=batch_size, img_size=(image_size, image_size))
-# start 3 processes to run the dataflow in parallel
-df = PrefetchDataZMQ(df, 10)
-df.reset_state()
-scene_data = df.get_data()
+        return x, recon_x
 
 # image_size = 32, img_channels = 3, class_num = 10 in cifar10
 x = tf.placeholder(tf.float32, shape=[None, image_size, image_size, img_channels])
@@ -240,15 +242,35 @@ training_flag = tf.placeholder(tf.bool)
 
 learning_rate = tf.placeholder(tf.float32, name='learning_rate')
 
-logits = SE_ResNeXt(x, training=training_flag).model
+logits, recon_x = SE_ResNeXt(x, training=training_flag).model
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
+
+G_loss = 1e-2*tf.reduce_mean(tf.abs(x - recon_x))
 
 l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
-train = optimizer.minimize(cost + l2_loss * weight_decay)
+train = optimizer.minimize(cost + l2_loss * weight_decay + G_loss)
 
 correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+val_dir = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
+annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
+# a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
+df = MyDataFlow(val_dir, annotations, is_training=False, batch_size=batch_size, img_size=(image_size, image_size))
+# start 3 processes to run the dataflow in parallel
+df = PrefetchDataZMQ(df, nr_proc=3)
+df.reset_state()
+scene_data_val = df.get_data()
+
+train_dir = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_images_20170904/' 
+annotations = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_train_annotations_20170904.json'
+# a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
+df = MyDataFlow(train_dir, annotations, is_training=True, batch_size=batch_size, img_size=(image_size, image_size))
+# start 3 processes to run the dataflow in parallel
+df = PrefetchDataZMQ(df, nr_proc=8)
+df.reset_state()
+scene_data = df.get_data()
 
 saver = tf.train.Saver(tf.global_variables())
 
@@ -261,6 +283,14 @@ with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
     summary_writer = tf.summary.FileWriter('./logs', sess.graph)
+    
+    _x = x[:, :, :, ::-1]
+    tf.summary.image('x', _x, 4)
+    
+    _recon_x = recon_x[:, :, :, ::-1]
+    tf.summary.image('recon_x', _recon_x, 4)
+    
+    summary_op = tf.summary.merge_all()
 
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
@@ -290,6 +320,11 @@ with tf.Session() as sess:
 
             train_loss += batch_loss
             train_acc += batch_acc
+
+            if step % 30 == 0 :
+                summary_str = sess.run(summary_op, feed_dict=train_feed_dict)
+                summary_writer.add_summary(summary=summary_str, global_step=epoch)
+                summary_writer.flush()
 
 
         train_loss /= iteration # average loss
