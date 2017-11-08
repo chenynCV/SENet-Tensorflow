@@ -80,9 +80,6 @@ class MyDataFlow(DataFlow):
             label_list = json.load(f)
         for image in label_list:
             self.data_dict[image['image_id']] = int(image['label_id'])
-        self.start = 0
-        self.end = 0
-        self.Length = len(self.data_dict)
         self.img_name = list(self.data_dict.keys())
         self.image_path = image_path
         self.is_training = is_training
@@ -100,3 +97,28 @@ class MyDataFlow(DataFlow):
         if self.is_training:
             img_data = data_augmentation(np.array(img_data), img_size=self.img_size)
         yield {'data': np.array(img_data), 'label': np.array(img_label)}
+
+
+class MyDataFlowEval(DataFlow):
+    def __init__(self, image_path, label_path, img_size=(224, 224)):
+        # get all the image name and its label
+        self.data_dict = {}
+        with open(label_path, 'r') as f:
+            label_list = json.load(f)
+        for image in label_list:
+            self.data_dict[image['image_id']] = int(image['label_id'])
+        self.img_name = list(self.data_dict.keys())
+        self.image_path = image_path
+        self.img_size = img_size
+        self.Length = len(self.data_dict)
+
+    def get_data(self):
+        for index, item in enumerate(self.img_name):
+            data = cv2.resize(cv2.imread(os.path.join(self.image_path, item)), self.img_size)
+            label = self.data_dict[item]
+            yield {
+                'name': item, 
+                'data': np.expand_dims(np.array(data), axis=0),
+                'label': np.array(label),
+                'epoch': (index+1) == self.Length
+            }
