@@ -72,7 +72,7 @@ def resnet_model_fn(inputs, training):
     network = resnet_model.imagenet_resnet_v2(
         resnet_size=18, num_classes=class_num, data_format=None)
     inputs= network(inputs=inputs, is_training=training)
-    feat = inputs
+    feat = tf.nn.l2_normalize(inputs, 1, 1e-10, name='feat')
     inputs = tf.layers.dense(inputs=inputs, units=class_num)
     inputs = tf.identity(inputs, 'final_dense')
 
@@ -138,8 +138,10 @@ with tf.Session() as sess:
 
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
-        if epoch % 30 == 0 :
+        if epoch % 5 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
+            if epoch_learning_rate <= 1e-5:
+                epoch_learning_rate = epoch_learning_rate * 1e3
 
         train_acc = 0.0
         train_loss = 0.0

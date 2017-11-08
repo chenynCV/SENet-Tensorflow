@@ -16,7 +16,7 @@ os.environ['CUDA_VISIBLE_DEVICES']= '3'
 weight_decay = 0.0005
 momentum = 0.9
 
-init_learning_rate = 0.1
+init_learning_rate = 0.1 * 5
 cardinality = 2 # how many split ?
 blocks = 3 # res_block ! (split + transition)
 depth = 64 # out channel

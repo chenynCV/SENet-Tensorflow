@@ -9,7 +9,7 @@ from tensorpack import imgaug, dataset, ModelDesc, InputDesc
 from tensorpack.dataflow import (
     AugmentImageComponent, PrefetchDataZMQ,
     BatchData, MultiThreadMapData, DataFlow)
-from dataflow_input import MyDataFlowEval
+from dataflow_input import (MyDataFlowEval, data_augmentation)
 from IPython import embed
 
 os.environ['CUDA_VISIBLE_DEVICES']= '2'
@@ -89,6 +89,20 @@ def Concatenation(layers) :
 def Fully_connected(x, units=class_num, layer_name='fully_connected') :
     with tf.name_scope(layer_name) :
         return tf.layers.dense(inputs=x, use_bias=False, units=units)
+
+def center_loss(features, label, alfa, nrof_classes):
+    """Center loss based on the paper "A Discriminative Feature Learning Approach for Deep Face Recognition"
+       (http://ydwen.github.io/papers/WenECCV16.pdf)
+    """
+    nrof_features = features.get_shape()[1]
+    centers = tf.get_variable('centers', [nrof_classes, nrof_features], dtype=tf.float32,
+        initializer=tf.constant_initializer(0), trainable=False)
+    label = tf.reshape(label, [-1])
+    centers_batch = tf.gather(centers, label)
+    diff = (1 - alfa) * (centers_batch - features)
+    centers = tf.scatter_sub(centers, label, diff)
+    loss = tf.reduce_mean(tf.square(features - centers_batch))
+    return loss, centers
 
 def Evaluate(sess):
     test_acc = 0.0
@@ -232,8 +246,10 @@ class SE_ResNeXt():
         x = Global_Average_Pooling(x)
         x = flatten(x)
 
+        feat = tf.nn.l2_normalize(x, 1, 1e-10, name='feat')
+
         x = Fully_connected(x, layer_name='final_fully_connected')
-        return x, recon_x
+        return x, recon_x, feat
 
 # image_size = 32, img_channels = 3, class_num = 10 in cifar10
 x = tf.placeholder(tf.float32, shape=[None, image_size, image_size, img_channels])
@@ -244,14 +260,16 @@ training_flag = tf.placeholder(tf.bool)
 
 learning_rate = tf.placeholder(tf.float32, name='learning_rate')
 
-logits, recon_x = SE_ResNeXt(x, training=training_flag).model
+logits, recon_x, feat = SE_ResNeXt(x, training=training_flag).model
+
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
-
 G_loss = 1e-2*tf.reduce_mean(tf.abs(x - recon_x))
-
 l2_loss = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
+C_loss, _ = center_loss(logits, tf.cast(label, dtype=tf.int32), 0.95, class_num)
+
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
-train = optimizer.minimize(cost + l2_loss * weight_decay + G_loss)
+# train = optimizer.minimize(cost + l2_loss * weight_decay + G_loss + C_loss)
+train = optimizer.minimize(cost + C_loss)
 
 correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
