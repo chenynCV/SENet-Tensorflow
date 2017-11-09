@@ -91,6 +91,60 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format):
       data_format=data_format)
 
 
+def GlobalAvgPooling(x, data_format):
+    """
+    Global average pooling as in the paper `Network In Network
+    <http://arxiv.org/abs/1312.4400>`_.
+    Args:
+        x (tf.Tensor): a NHWC tensor.
+    Returns:
+        tf.Tensor: a NC tensor named ``output``.
+    """
+    assert x.shape.ndims == 4
+    assert data_format in ['channels_last', 'channels_first']
+    axis = [1, 2] if data_format == 'channels_last' else [2, 3]
+    return tf.reduce_mean(x, axis, name='GlobalAvgPooling')
+
+
+def FullyConnected(x, out_dim,
+                   W_init=None, b_init=None,
+                   nl=tf.identity, use_bias=True):
+    """
+    Fully-Connected layer, takes a N>1D tensor and returns a 2D tensor.
+    It is an equivalent of `tf.layers.dense` except for naming conventions.
+    Args:
+        x (tf.Tensor): a tensor to be flattened except for the first dimension.
+        out_dim (int): output dimension
+        W_init: initializer for W. Defaults to `variance_scaling_initializer`.
+        b_init: initializer for b. Defaults to zero.
+        nl: a nonlinearity function
+        use_bias (bool): whether to use bias.
+    Returns:
+        tf.Tensor: a NC tensor named ``output`` with attribute `variables`.
+    Variable Names:
+    * ``W``: weights of shape [in_dim, out_dim]
+    * ``b``: bias
+    """
+    x = symbf.batch_flatten(x)
+
+    if W_init is None:
+        W_init = tf.contrib.layers.variance_scaling_initializer()
+    if b_init is None:
+        b_init = tf.constant_initializer()
+
+    with rename_get_variable({'kernel': 'W', 'bias': 'b'}):
+        layer = tf.layers.Dense(
+            out_dim, activation=lambda x: nl(x, name='output'), use_bias=use_bias,
+            kernel_initializer=W_init, bias_initializer=b_init,
+            trainable=True)
+        ret = layer.apply(x, scope=tf.get_variable_scope())
+
+    ret.variables = VariableHolder(W=layer.kernel)
+    if use_bias:
+        ret.variables.b = layer.bias
+    return ret
+
+  
 def building_block(inputs, filters, is_training, projection_shortcut, strides,
                    data_format):
   """Standard building block for residual networks with BN before convolutions.
@@ -126,6 +180,53 @@ def building_block(inputs, filters, is_training, projection_shortcut, strides,
   inputs = conv2d_fixed_padding(
       inputs=inputs, filters=filters, kernel_size=3, strides=1,
       data_format=data_format)
+
+  return inputs + shortcut
+
+
+def se_building_block(inputs, filters, is_training, projection_shortcut, strides,
+                   data_format):
+  """Standard building block for residual networks with BN before convolutions.
+
+  Args:
+    inputs: A tensor of size [batch, channels, height_in, width_in] or
+      [batch, height_in, width_in, channels] depending on data_format.
+    filters: The number of filters for the convolutions.
+    is_training: A Boolean for whether the model is in training or inference
+      mode. Needed for batch normalization.
+    projection_shortcut: The function to use for projection shortcuts (typically
+      a 1x1 convolution when downsampling the input).
+    strides: The block's stride. If greater than 1, this block will ultimately
+      downsample the input.
+    data_format: The input format ('channels_last' or 'channels_first').
+
+  Returns:
+    The output tensor of the block.
+  """
+  shortcut = inputs
+  inputs = batch_norm_relu(inputs, is_training, data_format)
+
+  # The projection shortcut should come after the first batch norm and ReLU
+  # since it performs a 1x1 convolution.
+  if projection_shortcut is not None:
+    shortcut = projection_shortcut(inputs)
+
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=filters, kernel_size=3, strides=strides,
+      data_format=data_format)
+
+  inputs = batch_norm_relu(inputs, is_training, data_format)
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=filters, kernel_size=3, strides=1,
+      data_format=data_format)
+
+  squeeze = GlobalAvgPooling(inputs)
+  squeeze = FullyConnected('fc1', squeeze, filters // 4, nl=tf.nn.relu)
+  squeeze = FullyConnected('fc2', squeeze, filters, nl=tf.nn.sigmoid)
+  if data_format == 'channels_first':
+    inputs = inputs * tf.reshape(squeeze, [-1, filters, 1, 1])
+  else:
+    inputs = inputs * tf.reshape(squeeze, [-1, 1, 1, filters])
 
   return inputs + shortcut
 
@@ -172,6 +273,59 @@ def bottleneck_block(inputs, filters, is_training, projection_shortcut,
       inputs=inputs, filters=4 * filters, kernel_size=1, strides=1,
       data_format=data_format)
 
+  return inputs + shortcut
+
+
+def se_bottleneck_block(inputs, filters, is_training, projection_shortcut,
+                     strides, data_format):
+  """Bottleneck block variant for residual networks with BN before convolutions.
+
+  Args:
+    inputs: A tensor of size [batch, channels, height_in, width_in] or
+      [batch, height_in, width_in, channels] depending on data_format.
+    filters: The number of filters for the first two convolutions. Note that the
+      third and final convolution will use 4 times as many filters.
+    is_training: A Boolean for whether the model is in training or inference
+      mode. Needed for batch normalization.
+    projection_shortcut: The function to use for projection shortcuts (typically
+      a 1x1 convolution when downsampling the input).
+    strides: The block's stride. If greater than 1, this block will ultimately
+      downsample the input.
+    data_format: The input format ('channels_last' or 'channels_first').
+
+  Returns:
+    The output tensor of the block.
+  """
+  shortcut = inputs
+  inputs = batch_norm_relu(inputs, is_training, data_format)
+
+  # The projection shortcut should come after the first batch norm and ReLU
+  # since it performs a 1x1 convolution.
+  if projection_shortcut is not None:
+    shortcut = projection_shortcut(inputs)
+
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=filters, kernel_size=1, strides=1,
+      data_format=data_format)
+
+  inputs = batch_norm_relu(inputs, is_training, data_format)
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=filters, kernel_size=3, strides=strides,
+      data_format=data_format)
+
+  inputs = batch_norm_relu(inputs, is_training, data_format)
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=4 * filters, kernel_size=1, strides=1,
+      data_format=data_format)
+
+  squeeze = GlobalAvgPooling(inputs)
+  squeeze = FullyConnected('fc1', squeeze, filters // 4, nl=tf.nn.relu)
+  squeeze = FullyConnected('fc2', squeeze, filters * 4, nl=tf.nn.sigmoid)
+  if data_format == 'channels_first':
+    inputs = inputs * tf.reshape(squeeze, [-1, filters * 4, 1, 1])
+  else:
+    inputs = inputs * tf.reshape(squeeze, [-1, 1, 1, filters * 4])
+    
   return inputs + shortcut
 
 
@@ -346,15 +500,22 @@ def imagenet_resnet_v2_generator(block_fn, layers, num_classes,
   return model
 
 
-def imagenet_resnet_v2(resnet_size, num_classes, data_format=None):
+def imagenet_resnet_v2(resnet_size, num_classes, mode='v2', data_format=None):
   """Returns the ResNet model for a given size and number of output classes."""
+  building_block_mode = {
+    'v2': building_block,
+    'se': se_building_block}[mode]
+  bottleneck_block_mode = {
+    'v2': bottleneck_block,
+    'se': se_bottleneck_block}[mode]
+
   model_params = {
-      18: {'block': building_block, 'layers': [2, 2, 2, 2]},
-      34: {'block': building_block, 'layers': [3, 4, 6, 3]},
-      50: {'block': bottleneck_block, 'layers': [3, 4, 6, 3]},
-      101: {'block': bottleneck_block, 'layers': [3, 4, 23, 3]},
-      152: {'block': bottleneck_block, 'layers': [3, 8, 36, 3]},
-      200: {'block': bottleneck_block, 'layers': [3, 24, 36, 3]}
+      18: {'block': building_block_mode, 'layers': [2, 2, 2, 2]},
+      34: {'block': building_block_mode, 'layers': [3, 4, 6, 3]},
+      50: {'block': bottleneck_block_mode, 'layers': [3, 4, 6, 3]},
+      101: {'block': bottleneck_block_mode, 'layers': [3, 4, 23, 3]},
+      152: {'block': bottleneck_block_mode, 'layers': [3, 8, 36, 3]},
+      200: {'block': bottleneck_block_mode, 'layers': [3, 24, 36, 3]}
   }
 
   if resnet_size not in model_params:
