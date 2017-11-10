@@ -33,6 +33,8 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import numpy as np
+from IPython import embed
 
 _BATCH_NORM_DECAY = 0.997
 _BATCH_NORM_EPSILON = 1e-5
@@ -106,9 +108,26 @@ def GlobalAvgPooling(x, data_format):
     return tf.reduce_mean(x, axis, name='GlobalAvgPooling')
 
 
+def flatten(x):
+    """
+    Flatten the tensor.
+    """
+    return tf.reshape(x, [-1])
+
+
+def batch_flatten(x):
+    """
+    Flatten the tensor except the first dimension.
+    """
+    shape = x.get_shape().as_list()[1:]
+    if None not in shape:
+        return tf.reshape(x, [-1, int(np.prod(shape))])
+    return tf.reshape(x, tf.stack([tf.shape(x)[0], -1]))
+
+
 def FullyConnected(x, out_dim,
                    W_init=None, b_init=None,
-                   nl=tf.identity, use_bias=True):
+                   nl=tf.identity, use_bias=True, name='fc'):
     """
     Fully-Connected layer, takes a N>1D tensor and returns a 2D tensor.
     It is an equivalent of `tf.layers.dense` except for naming conventions.
@@ -125,24 +144,21 @@ def FullyConnected(x, out_dim,
     * ``W``: weights of shape [in_dim, out_dim]
     * ``b``: bias
     """
-    x = symbf.batch_flatten(x)
+    x = batch_flatten(x)
 
     if W_init is None:
         W_init = tf.contrib.layers.variance_scaling_initializer()
     if b_init is None:
         b_init = tf.constant_initializer()
+    
+    x = tf.layers.dense(
+      inputs=x, units=out_dim, activation=lambda x: nl(x, name='output'), use_bias=use_bias,
+      kernel_initializer=W_init, bias_initializer=b_init,
+      trainable=True)
 
-    with rename_get_variable({'kernel': 'W', 'bias': 'b'}):
-        layer = tf.layers.Dense(
-            out_dim, activation=lambda x: nl(x, name='output'), use_bias=use_bias,
-            kernel_initializer=W_init, bias_initializer=b_init,
-            trainable=True)
-        ret = layer.apply(x, scope=tf.get_variable_scope())
+    x = tf.identity(x, name)
 
-    ret.variables = VariableHolder(W=layer.kernel)
-    if use_bias:
-        ret.variables.b = layer.bias
-    return ret
+    return x
 
   
 def building_block(inputs, filters, is_training, projection_shortcut, strides,
@@ -220,14 +236,14 @@ def se_building_block(inputs, filters, is_training, projection_shortcut, strides
       inputs=inputs, filters=filters, kernel_size=3, strides=1,
       data_format=data_format)
 
-  squeeze = GlobalAvgPooling(inputs)
-  squeeze = FullyConnected('fc1', squeeze, filters // 4, nl=tf.nn.relu)
-  squeeze = FullyConnected('fc2', squeeze, filters, nl=tf.nn.sigmoid)
+  squeeze = GlobalAvgPooling(inputs, data_format)
+  squeeze = FullyConnected(squeeze, filters // 4, nl=tf.nn.relu, name='fc1')
+  squeeze = FullyConnected(squeeze, filters, nl=tf.nn.sigmoid, name='fc2')
+
   if data_format == 'channels_first':
     inputs = inputs * tf.reshape(squeeze, [-1, filters, 1, 1])
   else:
     inputs = inputs * tf.reshape(squeeze, [-1, 1, 1, filters])
-
   return inputs + shortcut
 
 
@@ -319,8 +335,8 @@ def se_bottleneck_block(inputs, filters, is_training, projection_shortcut,
       data_format=data_format)
 
   squeeze = GlobalAvgPooling(inputs)
-  squeeze = FullyConnected('fc1', squeeze, filters // 4, nl=tf.nn.relu)
-  squeeze = FullyConnected('fc2', squeeze, filters * 4, nl=tf.nn.sigmoid)
+  squeeze = FullyConnected(squeeze, filters // 4, nl=tf.nn.relu, name='fc1')
+  squeeze = FullyConnected(squeeze, filters * 4, nl=tf.nn.sigmoid, name='fc2')
   if data_format == 'channels_first':
     inputs = inputs * tf.reshape(squeeze, [-1, filters * 4, 1, 1])
   else:
@@ -351,7 +367,7 @@ def block_layer(inputs, filters, block_fn, blocks, strides, is_training, name,
     The output tensor of the block layer.
   """
   # Bottleneck blocks end with 4x the number of filters as they start with
-  filters_out = 4 * filters if block_fn is bottleneck_block else filters
+  filters_out = 4 * filters if block_fn in [bottleneck_block, se_bottleneck_block] else filters
 
   def projection_shortcut(inputs):
     return conv2d_fixed_padding(
@@ -485,14 +501,13 @@ def imagenet_resnet_v2_generator(block_fn, layers, num_classes,
         inputs=inputs, filters=512, block_fn=block_fn, blocks=layers[3],
         strides=2, is_training=is_training, name='block_layer4',
         data_format=data_format)
-
     inputs = batch_norm_relu(inputs, is_training, data_format)
     inputs = tf.layers.average_pooling2d(
         inputs=inputs, pool_size=7, strides=1, padding='VALID',
         data_format=data_format)
     inputs = tf.identity(inputs, 'final_avg_pool')
     inputs = tf.reshape(inputs,
-                        [-1, 512 if block_fn is building_block else 2048])
+                        [-1, 512 if block_fn in [building_block, se_building_block] else 2048])
     # inputs = tf.layers.dense(inputs=inputs, units=num_classes)
     # inputs = tf.identity(inputs, 'final_dense')
     return inputs

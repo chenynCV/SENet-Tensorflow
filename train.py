@@ -19,7 +19,7 @@ weight_decay = 1e-4
 momentum = 0.9
 
 total_epochs = 100
-iteration = 421
+iteration = 2*421
 # 128 * 421 ~ 53,879
 test_iteration = 10
 
@@ -70,7 +70,7 @@ def resnet_model_fn(inputs, training):
     """Our model_fn for ResNet to be used with our Estimator."""
 
     network = resnet_model.imagenet_resnet_v2(
-        resnet_size=18, num_classes=class_num, data_format=None)
+        resnet_size=18, num_classes=class_num, mode='se', data_format=None)
     inputs= network(inputs=inputs, is_training=training)
     feat = tf.nn.l2_normalize(inputs, 1, 1e-10, name='feat')
     inputs = tf.layers.dense(inputs=inputs, units=class_num)
@@ -96,7 +96,7 @@ optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=mom
 # Batch norm requires update_ops to be added as a train_op dependency.
 update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 with tf.control_dependencies(update_ops):
-    train_op = optimizer.minimize(cost + l2_loss + C_loss)
+    train_op = optimizer.minimize(cost + l2_loss)
 
 correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
@@ -115,7 +115,7 @@ annotations = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_trai
 # a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
 df = MyDataFlow(train_dir, annotations, is_training=True, batch_size=batch_size, img_size=image_size)
 # start 3 processes to run the dataflow in parallel
-df = PrefetchDataZMQ(df, nr_proc=8)
+df = PrefetchDataZMQ(df, nr_proc=3)
 df.reset_state()
 scene_data = df.get_data()
 
