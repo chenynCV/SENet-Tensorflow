@@ -334,7 +334,7 @@ def se_bottleneck_block(inputs, filters, is_training, projection_shortcut,
       inputs=inputs, filters=4 * filters, kernel_size=1, strides=1,
       data_format=data_format)
 
-  squeeze = GlobalAvgPooling(inputs)
+  squeeze = GlobalAvgPooling(inputs, data_format)
   squeeze = FullyConnected(squeeze, filters // 4, nl=tf.nn.relu, name='fc1')
   squeeze = FullyConnected(squeeze, filters * 4, nl=tf.nn.sigmoid, name='fc2')
   if data_format == 'channels_first':

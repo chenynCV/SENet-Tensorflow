@@ -70,7 +70,7 @@ def resnet_model_fn(inputs, training):
     """Our model_fn for ResNet to be used with our Estimator."""
 
     network = resnet_model.imagenet_resnet_v2(
-        resnet_size=18, num_classes=class_num, mode='se', data_format=None)
+        resnet_size=50, num_classes=class_num, mode='se', data_format=None)
     inputs= network(inputs=inputs, is_training=training)
     feat = tf.nn.l2_normalize(inputs, 1, 1e-10, name='feat')
     inputs = tf.layers.dense(inputs=inputs, units=class_num)
@@ -106,7 +106,7 @@ annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene
 # a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
 df = MyDataFlow(val_dir, annotations, is_training=False, batch_size=batch_size, img_size=image_size)
 # start 3 processes to run the dataflow in parallel
-df = PrefetchDataZMQ(df, nr_proc=3)
+df = PrefetchDataZMQ(df, nr_proc=10)
 df.reset_state()
 scene_data_val = df.get_data()
 
