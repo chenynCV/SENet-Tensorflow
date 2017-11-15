@@ -37,6 +37,37 @@ def center_loss(features, label, alfa, nrof_classes):
     loss = tf.reduce_mean(tf.square(features - centers_batch))
     return loss, centers
 
+def focal_loss(onehot_labels, cls_preds,
+                alpha=0.25, gamma=2.0, name=None, scope=None):
+    """Compute softmax focal loss between logits and onehot labels
+    logits and onehot_labels must have same shape [batchsize, num_classes] and
+    the same data type (float16, 32, 64)
+    Args:
+      onehot_labels: Each row labels[i] must be a valid probability distribution
+      cls_preds: Unscaled log probabilities
+      alpha: The hyperparameter for adjusting biased samples, default is 0.25
+      gamma: The hyperparameter for penalizing the easy labeled samples
+      name: A name for the operation (optional)
+    Returns:
+      A 1-D tensor of length batch_size of same type as logits with softmax focal loss
+    """
+    with tf.name_scope(scope, 'focal_loss', [cls_preds, onehot_labels]) as sc:
+        logits = tf.convert_to_tensor(cls_preds)
+        onehot_labels = tf.convert_to_tensor(onehot_labels)
+
+        precise_logits = tf.cast(logits, tf.float32) if (
+                        logits.dtype == tf.float16) else logits
+        onehot_labels = tf.cast(onehot_labels, precise_logits.dtype)
+        predictions = tf.nn.sigmoid(logits)
+        predictions_pt = tf.where(tf.equal(onehot_labels, 1), predictions, 1.-predictions)
+        # add small value to avoid 0
+        epsilon = 1e-8
+        alpha_t = tf.scalar_mul(alpha, tf.ones_like(onehot_labels, dtype=tf.float32))
+        alpha_t = tf.where(tf.equal(onehot_labels, 1.0), alpha_t, 1-alpha_t)
+        losses = tf.reduce_sum(-alpha_t * tf.pow(1. - predictions_pt, gamma) * tf.log(predictions_pt+epsilon),
+                                     name=name, axis=1)
+        return losses
+
 def Evaluate(sess):
     test_acc = 0.0
     test_loss = 0.0
@@ -53,7 +84,7 @@ def Evaluate(sess):
             training_flag: False
         }
 
-        loss_, acc_ = sess.run([cost, accuracy], feed_dict=test_feed_dict)
+        loss_, acc_ = sess.run([Total_loss, accuracy], feed_dict=test_feed_dict)
 
         test_loss += loss_
         test_acc += acc_
@@ -89,14 +120,16 @@ learning_rate = tf.placeholder(tf.float32, name='learning_rate')
 logits, feat = resnet_model_fn(x, training=training_flag)
 
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
+Focal_loss = tf.reduce_mean(focal_loss(one_hot_labels, logits))
 l2_loss = weight_decay * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
-C_loss, _ = center_loss(logits, tf.cast(label, dtype=tf.int32), 0.95, class_num)
+Center_loss, _ = center_loss(logits, tf.cast(label, dtype=tf.int32), 0.95, class_num)
+Total_loss = Focal_loss + l2_loss
 
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
 # Batch norm requires update_ops to be added as a train_op dependency.
 update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 with tf.control_dependencies(update_ops):
-    train_op = optimizer.minimize(cost + l2_loss)
+    train_op = optimizer.minimize(Total_loss)
 
 correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
@@ -156,7 +189,7 @@ with tf.Session() as sess:
                 training_flag: True
             }
 
-            _, batch_loss = sess.run([train_op, cost], feed_dict=train_feed_dict)
+            _, batch_loss = sess.run([train_op, Total_loss], feed_dict=train_feed_dict)
             batch_acc = accuracy.eval(feed_dict=train_feed_dict)
 
             print("epoch: %d/%d, iter: %d/%d, batch_loss: %.4f, batch_acc: %.4f \n" % (

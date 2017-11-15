@@ -8,7 +8,7 @@ from dataflow_input import MyDataFlowEval
 import resnet_model
 from IPython import embed
 
-os.environ['CUDA_VISIBLE_DEVICES']= '2'
+os.environ['CUDA_VISIBLE_DEVICES']= '0'
 
 init_learning_rate = 0.1
 batch_size = 64
@@ -71,7 +71,7 @@ def resnet_model_fn(inputs, training):
     """Our model_fn for ResNet to be used with our Estimator."""
 
     network = resnet_model.imagenet_resnet_v2(
-        resnet_size=34, num_classes=class_num, mode='se', data_format=None)
+        resnet_size=50, num_classes=class_num, mode='se', data_format=None)
     inputs= network(inputs=inputs, is_training=training)
     feat = tf.nn.l2_normalize(inputs, 1, 1e-10, name='feat')
     inputs = tf.layers.dense(inputs=inputs, units=class_num)
