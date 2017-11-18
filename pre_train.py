@@ -1,27 +1,26 @@
 import tensorflow as tf
 import numpy as np
 import os
-import json
 from tensorpack import imgaug, dataset, ModelDesc, InputDesc
 from tensorpack.dataflow import (PrefetchDataZMQ, BatchData)
-from dataflow_input import MyDataFlowEval
+from dataflow_input import MyDataFlow
 import resnet_model
 from IPython import embed
 
 os.environ['CUDA_VISIBLE_DEVICES']= '0'
 
 init_learning_rate = 0.1
-batch_size = 64
+batch_size = 128
 image_size = 224
 img_channels = 3
-class_num = 80
+class_num = 365
 
 weight_decay = 1e-4
 momentum = 0.9
 
 total_epochs = 100
-iteration = 421
-# 128 * 421 ~ 53,879
+iteration = 14089
+# 128 * 14089 ~ 1,803,460
 test_iteration = 10
 
 def center_loss(features, label, alfa, nrof_classes):
@@ -124,7 +123,7 @@ cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_lab
 Focal_loss = tf.reduce_mean(focal_loss(one_hot_labels, logits, alpha=0.5))
 l2_loss = weight_decay * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
 Center_loss, centers = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
-Total_loss = Focal_loss + l2_loss + Center_loss
+Total_loss = cost + l2_loss
 
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
 # Batch norm requires update_ops to be added as a train_op dependency.
@@ -135,37 +134,95 @@ with tf.control_dependencies(update_ops):
 correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
-values, indices = tf.nn.top_k(logits, 3)
+# val_dir = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
+# annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
+# # a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
+# df = MyDataFlow(val_dir, annotations, is_training=False, batch_size=batch_size, img_size=image_size)
+# # start 3 processes to run the dataflow in parallel
+# df = PrefetchDataZMQ(df, nr_proc=10)
+# df.reset_state()
+# scene_data_val = df.get_data()
 
-val_dir = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_images_20170908/'
-annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene_validation_annotations_20170908.json'
+train_dir = '/data0/AIChallenger/data_256'
+annotations = '/data0/AIChallenger/data_256/data_256.json'
 # a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
-df = MyDataFlowEval(val_dir, annotations, img_size=image_size)
+df = MyDataFlow(train_dir, annotations, is_training=True, batch_size=batch_size, img_size=image_size)
 # start 3 processes to run the dataflow in parallel
-df = PrefetchDataZMQ(df, nr_proc=1)
+df = PrefetchDataZMQ(df, nr_proc=10)
 df.reset_state()
-scene_data_val = df.get_data()
+scene_data = df.get_data()
 
 saver = tf.train.Saver(tf.global_variables())
 
 with tf.Session() as sess:
-    ckpt = tf.train.get_checkpoint_state('./model_release')
-    print("loading checkpoint...")
-    saver.restore(sess, ckpt.model_checkpoint_path)
+    ckpt = tf.train.get_checkpoint_state('./model_pretrain')
+    if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
+        print("loading checkpoint...")
+        saver.restore(sess, ckpt.model_checkpoint_path)
+    else:
+        sess.run(tf.global_variables_initializer())
 
-    result = []
-    for it in scene_data_val:
-        temp_dict = {}
-        feed_dict = {x: it['data'], training_flag: False}
-        predictions = np.squeeze(sess.run(indices, feed_dict=feed_dict), axis=0)
-        temp_dict['image_id'] = it['name']
-        temp_dict['label_id'] = predictions.tolist()
-        result.append(temp_dict)
-        print('image %s is %d,%d,%d, label: %d' % (it['name'], predictions[0], predictions[1], predictions[2], it['label']))
-        if it['epoch']:
-            break
+    summary_writer = tf.summary.FileWriter('./logs_pretrain', sess.graph)
+    
+    _x = x[:, :, :, ::-1]
+    tf.summary.image('x', _x, 4)
+    
+    summary_op = tf.summary.merge_all()
 
-    with open('submit.json', 'w') as f:
-        json.dump(result, f)
-        print('write result json, num is %d' % len(result))
+    epoch_learning_rate = init_learning_rate
+    for epoch in range(1, total_epochs + 1):
+        if epoch % 30 == 0 :
+            epoch_learning_rate = epoch_learning_rate / 10
 
+        train_acc = 0.0
+        train_loss = 0.0
+
+        for step in range(1, iteration + 1):
+            batch_data = next(scene_data)
+            batch_x = batch_data['data']
+            batch_y = batch_data['label']
+
+            train_feed_dict = {
+                x: batch_x,
+                label: batch_y,
+                learning_rate: epoch_learning_rate,
+                training_flag: True
+            }
+
+            _, batch_loss = sess.run([train_op, Total_loss], feed_dict=train_feed_dict)
+            batch_acc = accuracy.eval(feed_dict=train_feed_dict)
+
+            print("epoch: %d/%d, iter: %d/%d, batch_loss: %.4f, batch_acc: %.4f \n" % (
+                epoch, total_epochs, step, iteration, batch_loss, batch_acc))
+
+            train_loss += batch_loss
+            train_acc += batch_acc
+
+            if step % 30 == 0 :
+                summary_str = sess.run(summary_op, feed_dict=train_feed_dict)
+                summary_writer.add_summary(summary=summary_str, global_step=epoch)
+                summary_writer.flush()
+
+
+        train_loss /= iteration # average loss
+        train_acc /= iteration # average accuracy
+
+        train_summary = tf.Summary(value=[tf.Summary.Value(tag='train_loss', simple_value=train_loss),
+                                          tf.Summary.Value(tag='train_accuracy', simple_value=train_acc)])
+
+        # test_acc, test_loss, test_summary = Evaluate(sess)
+
+        summary_writer.add_summary(summary=train_summary, global_step=epoch)
+        # summary_writer.add_summary(summary=test_summary, global_step=epoch)
+        summary_writer.flush()
+
+        # line = "epoch: %d/%d, train_loss: %.4f, train_acc: %.4f, test_loss: %.4f, test_acc: %.4f \n" % (
+        #     epoch, total_epochs, train_loss, train_acc, test_loss, test_acc)
+        line = "epoch: %d/%d, train_loss: %.4f, train_acc: %.4f \n" % (
+            epoch, total_epochs, train_loss, train_acc)        
+        print(line)
+
+        with open('./logs_pretrain/logs.txt', 'a') as f:
+            f.write(line)
+
+        saver.save(sess=sess, save_path='./model_pretrain/model.ckpt')

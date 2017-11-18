@@ -122,7 +122,7 @@ logits, feat = resnet_model_fn(x, training=training_flag)
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
 Focal_loss = tf.reduce_mean(focal_loss(one_hot_labels, logits, alpha=0.5))
 l2_loss = weight_decay * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
-Center_loss, _ = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
+Center_loss, centers = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
 Total_loss = Focal_loss + l2_loss + Center_loss
 
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
