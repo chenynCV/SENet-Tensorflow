@@ -19,7 +19,7 @@ weight_decay = 1e-4
 momentum = 0.9
 
 total_epochs = 100
-iteration = 14089
+iteration = 14089 // 1
 # 128 * 14089 ~ 1,803,460
 test_iteration = 10
 
@@ -144,7 +144,7 @@ accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 # scene_data_val = df.get_data()
 
 train_dir = '/data0/AIChallenger/data_256'
-annotations = '/data0/AIChallenger/data_256/data_256.json'
+annotations = '/data0/AIChallenger/data_256.json'
 # a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
 df = MyDataFlow(train_dir, annotations, is_training=True, batch_size=batch_size, img_size=image_size)
 # start 3 processes to run the dataflow in parallel

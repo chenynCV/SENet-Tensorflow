@@ -18,7 +18,7 @@ with open(label_path, 'r') as f:
             image['label_id'] = label_id
             result.append(image)
 
-with open('/data0/AIChallenger/data_256/data_256.json', 'w') as f:
+with open('/data0/AIChallenger/data_256.json', 'w') as f:
     json.dump(result, f)
     print('write result json, num is %d' % len(result))
 
