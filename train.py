@@ -101,7 +101,7 @@ def resnet_model_fn(inputs, training):
     """Our model_fn for ResNet to be used with our Estimator."""
 
     network = resnet_model.imagenet_resnet_v2(
-        resnet_size=50, num_classes=class_num, mode='se', data_format=None)
+        resnet_size=18, num_classes=class_num, mode='se', data_format=None)
     inputs= network(inputs=inputs, is_training=training)
     feat = tf.nn.l2_normalize(inputs, 1, 1e-10, name='feat')
     inputs = tf.layers.dense(inputs=inputs, units=class_num)
@@ -120,10 +120,10 @@ learning_rate = tf.placeholder(tf.float32, name='learning_rate')
 logits, feat = resnet_model_fn(x, training=training_flag)
 
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
-Focal_loss = tf.reduce_mean(focal_loss(one_hot_labels, logits))
+Focal_loss = tf.reduce_mean(focal_loss(one_hot_labels, logits, alpha=0.5))
 l2_loss = weight_decay * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
-Center_loss, _ = center_loss(logits, tf.cast(label, dtype=tf.int32), 0.95, class_num)
-Total_loss = Focal_loss + l2_loss
+Center_loss, _ = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
+Total_loss = Focal_loss + l2_loss + Center_loss
 
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
 # Batch norm requires update_ops to be added as a train_op dependency.
@@ -148,7 +148,7 @@ annotations = '/data0/AIChallenger/ai_challenger_scene_train_20170904/scene_trai
 # a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
 df = MyDataFlow(train_dir, annotations, is_training=True, batch_size=batch_size, img_size=image_size)
 # start 3 processes to run the dataflow in parallel
-df = PrefetchDataZMQ(df, nr_proc=3)
+df = PrefetchDataZMQ(df, nr_proc=10)
 df.reset_state()
 scene_data = df.get_data()
 
