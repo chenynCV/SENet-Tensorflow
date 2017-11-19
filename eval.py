@@ -8,7 +8,7 @@ from dataflow_input import MyDataFlowEval
 import resnet_model
 from IPython import embed
 
-os.environ['CUDA_VISIBLE_DEVICES']= '0'
+os.environ['CUDA_VISIBLE_DEVICES']= '2'
 
 init_learning_rate = 0.1
 batch_size = 64
@@ -157,6 +157,8 @@ with tf.Session() as sess:
     for it in scene_data_val:
         temp_dict = {}
         feed_dict = {x: it['data'], training_flag: False}
+        # centers_class = sess.run(centers, feed_dict=feed_dict)
+        # embed()
         predictions = np.squeeze(sess.run(indices, feed_dict=feed_dict), axis=0)
         temp_dict['image_id'] = it['name']
         temp_dict['label_id'] = predictions.tolist()

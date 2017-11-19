@@ -9,7 +9,7 @@ from IPython import embed
 
 os.environ['CUDA_VISIBLE_DEVICES']= '1'
 
-init_learning_rate = 0.1
+init_learning_rate = 0.01
 batch_size = 64
 image_size = 224
 img_channels = 3
@@ -22,6 +22,21 @@ total_epochs = 100
 iteration = 2*421
 # 128 * 421 ~ 53,879
 test_iteration = 10
+
+def optimistic_restore(session, save_file):
+    reader = tf.train.NewCheckpointReader(save_file)
+    saved_shapes = reader.get_variable_to_shape_map()
+    var_names = sorted([(var.name, var.name.split(':')[0]) for var in tf.global_variables() if var.name.split(':')[0] in saved_shapes])
+    restore_vars = []
+    name2var = dict(zip(map(lambda x:x.name.split(':')[0], tf.global_variables()), tf.global_variables()))
+    with tf.variable_scope('', reuse=True):
+        for var_name, saved_var_name in var_names:
+            curr_var = name2var[saved_var_name]
+            var_shape = curr_var.get_shape().as_list()
+            if var_shape == saved_shapes[saved_var_name]:
+                restore_vars.append(curr_var)
+    saver = tf.train.Saver(restore_vars)
+    saver.restore(session, save_file)
 
 def center_loss(features, label, alfa, nrof_classes):
     """Center loss based on the paper "A Discriminative Feature Learning Approach for Deep Face Recognition"
@@ -123,7 +138,7 @@ cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_lab
 Focal_loss = tf.reduce_mean(focal_loss(one_hot_labels, logits, alpha=0.5))
 l2_loss = weight_decay * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
 Center_loss, centers = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
-Total_loss = Focal_loss + l2_loss + Center_loss
+Total_loss = cost + l2_loss
 
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
 # Batch norm requires update_ops to be added as a train_op dependency.
@@ -158,7 +173,9 @@ with tf.Session() as sess:
     ckpt = tf.train.get_checkpoint_state('./model')
     if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
         print("loading checkpoint...")
-        saver.restore(sess, ckpt.model_checkpoint_path)
+        sess.run(tf.global_variables_initializer())
+        optimistic_restore(sess, ckpt.model_checkpoint_path)
+        # saver.restore(sess, ckpt.model_checkpoint_path)
     else:
         sess.run(tf.global_variables_initializer())
 
