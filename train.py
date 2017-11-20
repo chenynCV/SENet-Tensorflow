@@ -156,7 +156,7 @@ annotations = '/data0/AIChallenger/ai_challenger_scene_validation_20170908/scene
 # a DataFlow you implement to produce [tensor1, tensor2, ..] lists from whatever sources:
 df = MyDataFlow(val_dir, annotations, is_training=False, batch_size=batch_size, img_size=image_size)
 # start 3 processes to run the dataflow in parallel
-df = PrefetchDataZMQ(df, nr_proc=10)
+df = PrefetchDataZMQ(df, nr_proc=1)
 df.reset_state()
 scene_data_val = df.get_data()
 

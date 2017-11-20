@@ -9,7 +9,7 @@ from IPython import embed
 
 os.environ['CUDA_VISIBLE_DEVICES']= '0'
 
-init_learning_rate = 0.01
+init_learning_rate = 0.1
 batch_size = 128
 image_size = 224
 img_channels = 3
@@ -18,7 +18,7 @@ class_num = 365
 weight_decay = 1e-4
 momentum = 0.9
 
-total_epochs = 100
+total_epochs = 30
 iteration = 14089 // 1
 # 128 * 14089 ~ 1,803,460
 test_iteration = 10
@@ -105,7 +105,8 @@ def resnet_model_fn(inputs, training):
         resnet_size=18, num_classes=class_num, mode='se', data_format=None)
     inputs= network(inputs=inputs, is_training=training)
     feat = tf.nn.l2_normalize(inputs, 1, 1e-10, name='feat')
-    inputs = tf.layers.dense(inputs=inputs, units=class_num)
+    # inputs = tf.layers.dense(inputs=inputs, units=class_num)
+    inputs = tf.layers.dense(inputs=feat, units=class_num)
     inputs = tf.identity(inputs, 'final_dense')
 
     return inputs, feat
@@ -172,7 +173,7 @@ with tf.Session() as sess:
 
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
-        if epoch % 30 == 0 :
+        if epoch % 10 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
 
         train_acc = 0.0
