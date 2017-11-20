@@ -45,7 +45,8 @@ def fbresnet_augmentor(isTrain, target_shape=224):
     """
     if isTrain:
         augmentors = [
-            GoogleNetResize(target_shape=target_shape),
+            GoogleNetResize(crop_area_fraction=0.32, target_shape=target_shape),
+            # GoogleNetResize(target_shape=target_shape),
             imgaug.RandomOrderAug(
                 [# imgaug.BrightnessScale((0.6, 1.4), clip=False),
                  # imgaug.Contrast((0.6, 1.4), clip=False),
