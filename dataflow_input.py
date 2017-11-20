@@ -47,9 +47,9 @@ def fbresnet_augmentor(isTrain, target_shape=224):
         augmentors = [
             GoogleNetResize(target_shape=target_shape),
             imgaug.RandomOrderAug(
-                [imgaug.BrightnessScale((0.6, 1.4), clip=False),
-                 imgaug.Contrast((0.6, 1.4), clip=False),
-                 imgaug.Saturation(0.4, rgb=False),
+                [# imgaug.BrightnessScale((0.6, 1.4), clip=False),
+                 # imgaug.Contrast((0.6, 1.4), clip=False),
+                 # imgaug.Saturation(0.4, rgb=False),
                  # rgb-bgr conversion for the constants copied from fb.resnet.torch
                  imgaug.Lighting(0.1,
                                  eigval=np.asarray(

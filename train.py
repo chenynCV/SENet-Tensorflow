@@ -18,7 +18,7 @@ class_num = 80
 weight_decay = 1e-4
 momentum = 0.9
 
-total_epochs = 100
+total_epochs = 30
 iteration = 2*421
 # 128 * 421 ~ 53,879
 test_iteration = 10
@@ -188,7 +188,7 @@ with tf.Session() as sess:
 
     epoch_learning_rate = init_learning_rate
     for epoch in range(1, total_epochs + 1):
-        if epoch % 30 == 0 :
+        if epoch % 20 == 0 :
             epoch_learning_rate = epoch_learning_rate / 10
 
         train_acc = 0.0
