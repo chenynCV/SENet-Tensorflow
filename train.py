@@ -49,6 +49,7 @@ def center_loss(features, label, alfa, nrof_classes):
     centers_batch = tf.gather(centers, label)
     diff = (1 - alfa) * (centers_batch - features)
     centers = tf.scatter_sub(centers, label, diff)
+    centers = tf.nn.l2_normalize(centers, 1, 1e-10, name='centers_norm')
     loss = tf.reduce_mean(tf.square(features - centers_batch))
     return loss, centers
 
@@ -137,8 +138,8 @@ logits, feat = resnet_model_fn(x, training=training_flag)
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
 Focal_loss = tf.reduce_mean(focal_loss(one_hot_labels, logits, alpha=0.5))
 l2_loss = weight_decay * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
-Center_loss, centers = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
-Total_loss = cost + l2_loss
+Center_loss, Centers = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
+Total_loss = cost + l2_loss + Center_loss
 
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
 # Batch norm requires update_ops to be added as a train_op dependency.
@@ -206,7 +207,7 @@ with tf.Session() as sess:
                 training_flag: True
             }
 
-            _, batch_loss = sess.run([train_op, Total_loss], feed_dict=train_feed_dict)
+            _, batch_loss, centers_class = sess.run([train_op, Total_loss, Centers], feed_dict=train_feed_dict)
             batch_acc = accuracy.eval(feed_dict=train_feed_dict)
 
             print("epoch: %d/%d, iter: %d/%d, batch_loss: %.4f, batch_acc: %.4f \n" % (
@@ -241,3 +242,4 @@ with tf.Session() as sess:
             f.write(line)
 
         saver.save(sess=sess, save_path='./model/model.ckpt')
+        np.save("centers.npy", centers_class)

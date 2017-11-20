@@ -24,6 +24,17 @@ iteration = 421
 # 128 * 421 ~ 53,879
 test_iteration = 10
 
+def dist_top_k(feat, centers):
+    feat = feat[0, ]
+    diff = centers_class - feat
+    diff = - tf.reduce_sum(diff*diff, axis=1)
+    _, predictions = tf.nn.top_k(diff, 3)
+    return predictions
+
+def get_tensor_by_name(save_file, var_name):
+    reader = tf.train.NewCheckpointReader(save_file)
+    return reader.get_tensor(var_name)
+
 def center_loss(features, label, alfa, nrof_classes):
     """Center loss based on the paper "A Discriminative Feature Learning Approach for Deep Face Recognition"
        (http://ydwen.github.io/papers/WenECCV16.pdf)
@@ -35,6 +46,7 @@ def center_loss(features, label, alfa, nrof_classes):
     centers_batch = tf.gather(centers, label)
     diff = (1 - alfa) * (centers_batch - features)
     centers = tf.scatter_sub(centers, label, diff)
+    centers = tf.nn.l2_normalize(centers, 1, 1e-10, name='centers_norm')
     loss = tf.reduce_mean(tf.square(features - centers_batch))
     return loss, centers
 
@@ -123,7 +135,7 @@ logits, feat = resnet_model_fn(x, training=training_flag)
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=one_hot_labels, logits=logits))
 Focal_loss = tf.reduce_mean(focal_loss(one_hot_labels, logits, alpha=0.5))
 l2_loss = weight_decay * tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
-Center_loss, centers = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
+Center_loss, Centers = center_loss(feat, tf.cast(label, dtype=tf.int32), 0.95, class_num)
 Total_loss = Focal_loss + l2_loss + Center_loss
 
 optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum, use_nesterov=True)
@@ -146,6 +158,10 @@ df = PrefetchDataZMQ(df, nr_proc=1)
 df.reset_state()
 scene_data_val = df.get_data()
 
+centers_class = np.load("centers.npy")
+centers_class = tf.convert_to_tensor(centers_class)
+indices_Center = dist_top_k(feat, centers_class)
+
 saver = tf.train.Saver(tf.global_variables())
 
 with tf.Session() as sess:
@@ -157,9 +173,11 @@ with tf.Session() as sess:
     for it in scene_data_val:
         temp_dict = {}
         feed_dict = {x: it['data'], training_flag: False}
-        # centers_class = sess.run(centers, feed_dict=feed_dict)
-        # embed()
-        predictions = np.squeeze(sess.run(indices, feed_dict=feed_dict), axis=0)
+        predictions, predictions_Center = sess.run([indices, indices_Center], feed_dict=feed_dict)
+        predictions = np.squeeze(predictions, axis=0)
+
+        predictions = predictions_Center
+
         temp_dict['image_id'] = it['name']
         temp_dict['label_id'] = predictions.tolist()
         result.append(temp_dict)
