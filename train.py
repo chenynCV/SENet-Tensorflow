@@ -120,7 +120,8 @@ def resnet_model_fn(inputs, training):
         resnet_size=18, num_classes=class_num, mode='se', data_format=None)
     inputs= network(inputs=inputs, is_training=training)
     feat = tf.nn.l2_normalize(inputs, 1, 1e-10, name='feat')
-    inputs = tf.layers.dense(inputs=inputs, units=class_num)
+    # inputs = tf.layers.dense(inputs=inputs, units=class_num)
+    inputs = tf.layers.dense(inputs=feat, units=class_num)
     inputs = tf.identity(inputs, 'final_dense')
 
     return inputs, feat

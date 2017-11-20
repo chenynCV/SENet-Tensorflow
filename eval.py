@@ -176,7 +176,7 @@ with tf.Session() as sess:
         predictions, predictions_Center = sess.run([indices, indices_Center], feed_dict=feed_dict)
         predictions = np.squeeze(predictions, axis=0)
 
-        # predictions = predictions_Center
+        predictions = predictions_Center
 
         temp_dict['image_id'] = it['name']
         temp_dict['label_id'] = predictions.tolist()
