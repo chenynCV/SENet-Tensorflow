@@ -10,7 +10,7 @@ from IPython import embed
 os.environ['CUDA_VISIBLE_DEVICES']= '1'
 
 init_learning_rate = 0.01
-batch_size = 64
+batch_size = 128
 image_size = 224
 img_channels = 3
 class_num = 80
@@ -19,7 +19,7 @@ weight_decay = 1e-4
 momentum = 0.9
 
 total_epochs = 30
-iteration = 2*421
+iteration = 1*421
 # 128 * 421 ~ 53,879
 test_iteration = 10
 
