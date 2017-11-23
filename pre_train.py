@@ -34,7 +34,7 @@ def center_loss(features, label, alfa, nrof_classes):
     centers_batch = tf.gather(centers, label)
     diff = (1 - alfa) * (centers_batch - features)
     centers = tf.scatter_sub(centers, label, diff)
-    centers = tf.nn.l2_normalize(centers, 1, 1e-10, name='centers_norm')
+    # centers = tf.nn.l2_normalize(centers, 1, 1e-10, name='centers_norm')
     loss = tf.reduce_mean(tf.square(features - centers_batch))
     return loss, centers
 
@@ -105,8 +105,8 @@ def resnet_model_fn(inputs, training):
         resnet_size=18, num_classes=class_num, mode='se', data_format=None)
     inputs= network(inputs=inputs, is_training=training)
     feat = tf.nn.l2_normalize(inputs, 1, 1e-10, name='feat')
-    # inputs = tf.layers.dense(inputs=inputs, units=class_num)
-    inputs = tf.layers.dense(inputs=feat, units=class_num)
+    inputs = tf.layers.dense(inputs=inputs, units=class_num)
+    # inputs = tf.layers.dense(inputs=feat, units=class_num)
     inputs = tf.identity(inputs, 'final_dense')
 
     return inputs, feat

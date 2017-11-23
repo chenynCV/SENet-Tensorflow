@@ -21,4 +21,3 @@ with open(label_path, 'r') as f:
 with open('/data0/AIChallenger/data_256.json', 'w') as f:
     json.dump(result, f)
     print('write result json, num is %d' % len(result))
-
